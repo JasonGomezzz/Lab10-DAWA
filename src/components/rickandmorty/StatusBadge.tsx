@@ -1,18 +1,21 @@
 import { STATUS_LABELS } from "@/lib/rickandmorty";
 import type { CharacterStatus } from "@/types/rickandmorty";
 
-const DOT_COLORS: Record<CharacterStatus, string> = {
-  Alive: "bg-lime-400",
-  Dead: "bg-red-500",
-  unknown: "bg-slate-400",
-};
-
+// El color sale de data-status (ver rickandmorty.css): vivo, muerto o desconocido
 export default function StatusBadge({ status }: { status: CharacterStatus }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs font-medium text-slate-200">
+    <span
+      data-status={status}
+      className="inline-flex items-center gap-2 text-sm font-medium"
+      style={{ color: "var(--rm-ring)" }}
+    >
       <span
-        className={`size-2 rounded-full ${DOT_COLORS[status] ?? "bg-slate-400"}`}
         aria-hidden="true"
+        className="size-2 rounded-full"
+        style={{
+          background: "var(--rm-ring)",
+          boxShadow: "0 0 0 3px color-mix(in oklab, var(--rm-ring) 22%, transparent)",
+        }}
       />
       {STATUS_LABELS[status] ?? status}
     </span>
