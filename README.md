@@ -71,10 +71,10 @@ src/
 
 - El detalle se lee en lotes de 100 ids (`/character/1,2,...,100`), 9 peticiones en total en lugar de 826.
 - `generateStaticParams` solo pide el total (los ids son consecutivos, 1 a 826).
-- Las lecturas del servidor reintentan ante un `429` respetando `Retry-After`.
+- Las lecturas del servidor reintentan ante un `429` (respetando `Retry-After`), un `5xx` o un fallo de conexión, con espera creciente.
 - La respuesta `429` de la API no incluye cabeceras CORS, así que en el navegador no llega como estado `429` sino como `TypeError: Failed to fetch`. El buscador trata ese `TypeError` (y un `429` visible, si llegara) como límite de la API: muestra un mensaje que explica qué pasó, reintenta solo a los 10 s (hasta 3 veces) y ofrece **Reintentar ahora**, que reinicia el conteo. Un `TypeError` también puede deberse a una conexión caída y se trata igual. Cualquier otro error (por ejemplo un HTTP 500) muestra su mensaje con el mismo botón, sin reintento automático.
 - Para no llegar al límite desde el navegador: debounce de 500 ms al escribir y caché de resultados en memoria por URL de búsqueda y página (se pierde al recargar).
-- Los avatares de los resultados de búsqueda solo se piden si la tarjeta entra en pantalla (con 120 px de margen) y sigue montada tras 300 ms (más hasta 240 ms de escalonado entre tarjetas), así las listas intermedias al escribir no gastan peticiones. La lista inicial del servidor usa `loading="lazy"` sin esa espera.
+- Los avatares de los resultados de búsqueda solo se piden si la tarjeta entra en pantalla (con 120 px de margen) y sigue a la vista durante 300 ms (más hasta 240 ms de escalonado entre tarjetas); si sale antes, la carga se cancela. Así las listas intermedias al escribir y los desplazamientos rápidos no gastan peticiones. La lista inicial del servidor usa `loading="lazy"` sin esa espera.
 - Los avatares se sirven sin pasar por el optimizador de Next (`unoptimized`); si uno falla se reintenta hasta 3 veces con espera creciente (4, 8 y 12 s) y, agotados los intentos, se muestra un marcador.
 
 ## Diseño
@@ -84,7 +84,7 @@ src/
 - **Retratos en arco:** el marco usa el color del estado mediante `data-status` (verde vivo, coral muerto, amarillo desconocido); el mismo color tiñe la insignia y el resplandor al pasar el cursor.
 - **Hero:** portal SVG de aros animados del que salen tres personajes (Rick, Morty y Summer); es la única animación de entrada de la página.
 - **Fotos:** al terminar de cargar, la foto de cada retrato emerge del portal con `clip-path`.
-- **Movimiento reducido:** con `prefers-reduced-motion` se desactivan la entrada del hero, el giro de los aros, la emergencia de las fotos y las transiciones de las tarjetas.
+- **Movimiento reducido:** con `prefers-reduced-motion` se desactivan la entrada del hero, el giro de los aros, la emergencia de las fotos, las transiciones de las tarjetas, el pulso de los esqueletos y el desplazamiento suave al paginar.
 
 ## Cómo probar
 
