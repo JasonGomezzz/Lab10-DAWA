@@ -71,16 +71,24 @@ export function toListData(response: CharacterResponse): CharacterListData {
   return { info: response.info, results: response.results.map(toSummary) };
 }
 
-// La API responde 429 con la cabecera Retry-After cuando recibe muchas peticiones seguidas
+// Reintenta cuando la API responde 429 (con Retry-After), un 5xx o la conexión falla
 async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, init);
+    const isLast = attempt === MAX_RETRIES;
+    let waitSeconds = 2 ** attempt;
 
-    if (res.status !== 429 || attempt === MAX_RETRIES) return res;
+    try {
+      const res = await fetch(url, init);
 
-    const retryAfter = Number(res.headers.get("retry-after"));
-    const waitMs = Math.min((retryAfter > 0 ? retryAfter : 2 ** attempt) * 1000, MAX_WAIT_MS);
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+      if ((res.status !== 429 && res.status < 500) || isLast) return res;
+
+      const retryAfter = Number(res.headers.get("retry-after"));
+      if (retryAfter > 0) waitSeconds = retryAfter;
+    } catch (error) {
+      if (isLast) throw error;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, Math.min(waitSeconds * 1000, MAX_WAIT_MS)));
   }
 }
 
