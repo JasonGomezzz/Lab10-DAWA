@@ -23,7 +23,7 @@ export default function CharacterCard({ character, gated = false, delay = 0 }: C
           {/* loading="lazy": la imagen solo se descarga al acercarse al viewport */}
           <CharacterAvatar
             src={character.image}
-            alt={character.name}
+            alt=""
             sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
             loading="lazy"
             gated={gated}

@@ -11,11 +11,12 @@ const RETRY_DELAY_MS = 4000;
 
 interface CharacterAvatarProps {
   src: string;
+  // Vacío cuando el nombre ya aparece junto a la imagen (así el lector de pantalla no lo repite)
   alt: string;
   sizes: string;
   loading?: "lazy" | "eager";
   // Para resultados de búsqueda: la imagen solo se pide si la tarjeta entra en pantalla
-  // y se mantiene `delay` ms, así las listas intermedias mientras se escribe no gastan peticiones
+  // y sigue visible `delay` ms, así las listas intermedias mientras se escribe no gastan peticiones
   gated?: boolean;
   delay?: number;
 }
@@ -32,9 +33,19 @@ export default function CharacterAvatar({
   const [hasError, setHasError] = useState(false);
   const [armed, setArmed] = useState(!gated);
   const placeholderRef = useRef<HTMLDivElement>(null);
-  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  useEffect(() => () => clearTimeout(retryTimer.current), []);
+  // Espera de cada reintento: vive en un efecto para que se reprograme si Next oculta y vuelve
+  // a mostrar la ruta (al ocultarla se limpian los efectos)
+  useEffect(() => {
+    if (!hasError || attempt >= MAX_RETRIES) return;
+
+    const timer = setTimeout(() => {
+      setAttempt((current) => current + 1);
+      setHasError(false);
+    }, RETRY_DELAY_MS * (attempt + 1));
+
+    return () => clearTimeout(timer);
+  }, [hasError, attempt]);
 
   useEffect(() => {
     const node = placeholderRef.current;
@@ -43,9 +54,9 @@ export default function CharacterAvatar({
     let armTimer: ReturnType<typeof setTimeout> | undefined;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (!entry.isIntersecting) return;
-        observer.disconnect();
-        armTimer = setTimeout(() => setArmed(true), delay);
+        // Si la tarjeta sale de pantalla antes de cumplir la espera, se cancela la carga
+        clearTimeout(armTimer);
+        if (entry.isIntersecting) armTimer = setTimeout(() => setArmed(true), delay);
       },
       { rootMargin: "120px" },
     );
@@ -58,28 +69,20 @@ export default function CharacterAvatar({
     };
   }, [armed, delay]);
 
-  function handleError() {
-    setHasError(true);
-
-    if (attempt < MAX_RETRIES) {
-      retryTimer.current = setTimeout(() => {
-        setAttempt((current) => current + 1);
-        setHasError(false);
-      }, RETRY_DELAY_MS * (attempt + 1));
-    }
-  }
-
   if (!armed) {
-    return <div ref={placeholderRef} className="absolute inset-0 animate-pulse bg-white/5" />;
+    return (
+      <div ref={placeholderRef} className="absolute inset-0 bg-white/5 motion-safe:animate-pulse" />
+    );
   }
 
   if (hasError) {
     return (
       <div
-        role="img"
-        aria-label={alt}
+        role={alt ? "img" : undefined}
+        aria-label={alt || undefined}
+        aria-hidden={alt ? undefined : true}
         className={`absolute inset-0 flex items-center justify-center rm-text-faint ${
-          attempt < MAX_RETRIES ? "animate-pulse" : ""
+          attempt < MAX_RETRIES ? "motion-safe:animate-pulse" : ""
         }`}
       >
         <GiAlienStare size={56} />
@@ -104,7 +107,7 @@ export default function CharacterAvatar({
       onLoad={(event) => {
         event.currentTarget.dataset.state = "ready";
       }}
-      onError={handleError}
+      onError={() => setHasError(true)}
       className="rm-photo object-cover"
     />
   );
