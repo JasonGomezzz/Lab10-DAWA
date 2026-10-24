@@ -55,6 +55,7 @@ class ApiBusyError extends Error {}
 interface Failure {
   url: string;
   busy: boolean;
+  willRetry: boolean;
   message: string;
 }
 
@@ -124,18 +125,25 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
 
   // Espera a que el usuario deje de escribir antes de consultar la API
   useEffect(() => {
+    // Sin cambios pendientes no hay temporizador: al volver con Atrás Next re-ejecuta los efectos
+    // y no debe reiniciar la paginación
+    if (filters === debounced) return;
+
     const timer = setTimeout(() => {
       setDebounced(filters);
       setPage(1);
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [filters]);
+  }, [filters, debounced]);
 
   // Sin filtros y en la página 1 se reutiliza la lista que ya llegó renderizada del servidor
   const isInitial = page === 1 && !hasActiveFilters(debounced);
   const requestUrl = buildCharactersUrl(debounced, page);
   const fresh = isInitial ? initial : cache[requestUrl];
+
+  // Lo último que se mostró sirve de respaldo atenuado mientras llega la siguiente búsqueda
+  if (fresh && fresh !== stale) setStale(fresh);
 
   // Búsqueda en el cliente (CSR): cada cambio de filtros o de página consulta la API
   useEffect(() => {
@@ -158,13 +166,16 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
         const busy = error instanceof ApiBusyError || error instanceof TypeError;
         const used = retries.current[requestUrl] ?? 0;
 
+        const willRetry = busy && used < MAX_AUTO_RETRIES;
+
         setFailure({
           url: requestUrl,
           busy,
+          willRetry,
           message: error instanceof Error ? error.message : "Error desconocido",
         });
 
-        if (busy && used < MAX_AUTO_RETRIES) {
+        if (willRetry) {
           retries.current[requestUrl] = used + 1;
           retryTimer = setTimeout(() => setRetryNonce((current) => current + 1), RETRY_AFTER_MS);
         }
@@ -203,7 +214,8 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
 
   function goToPage(nextPage: number) {
     setPage(nextPage);
-    resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    resultsRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
   }
 
   return (
@@ -282,8 +294,11 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
               {data ? `${data.info.count} personajes` : error ? "Búsqueda en pausa" : "Buscando…"}
             </p>
             <p className="mt-1 min-h-5 text-sm rm-text-muted">
-              {data && data.info.pages > 0 && `Página ${page} de ${data.info.pages}`}
-              {isLoading && data ? ", actualizando…" : ""}
+              {data && data.info.pages > 0
+                ? `Página ${page} de ${data.info.pages}${isLoading ? ", actualizando…" : ""}`
+                : isLoading && data
+                  ? "Actualizando…"
+                  : ""}
             </p>
           </div>
 
@@ -310,7 +325,9 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
                 </p>
                 <p className="mt-1 text-sm rm-text-muted">
                   {error.busy
-                    ? "Pasa cuando se piden muchas fichas seguidas. Se reintentará sola en unos segundos."
+                    ? error.willRetry
+                      ? "Pasa cuando se piden muchas fichas seguidas. Se reintentará sola en unos segundos."
+                      : "Pasa cuando se piden muchas fichas seguidas. Espera unos segundos y pulsa Reintentar ahora."
                     : error.message}
                 </p>
               </div>
@@ -322,7 +339,7 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
         ) : showSkeleton ? (
           <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {Array.from({ length: 10 }, (_, index) => (
-              <div key={index} className="animate-pulse">
+              <div key={index} className="motion-safe:animate-pulse">
                 <div className="rm-arch aspect-[1/1.12] bg-white/5" />
                 <div className="mt-3 h-5 w-3/4 rounded bg-white/5" />
                 <div className="mt-2 h-4 w-1/2 rounded bg-white/5" />
@@ -366,16 +383,20 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
             </span>
             <button
               type="button"
-              onClick={() => goToPage(page - 1)}
-              disabled={page <= 1 || isLoading}
+              onClick={() => {
+                if (page > 1 && !isLoading) goToPage(page - 1);
+              }}
+              aria-disabled={page <= 1 || isLoading}
               className="rm-btn sm:order-1"
             >
               <IoChevronBack size={18} /> Anterior
             </button>
             <button
               type="button"
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= data.info.pages || isLoading}
+              onClick={() => {
+                if (page < data.info.pages && !isLoading) goToPage(page + 1);
+              }}
+              aria-disabled={page >= data.info.pages || isLoading}
               className="rm-btn sm:order-3"
             >
               Siguiente <IoChevronForward size={18} />
