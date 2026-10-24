@@ -60,6 +60,9 @@ async function searchCharacters(
   if (res.status === 404) {
     return { info: { count: 0, pages: 0, next: null, prev: null }, results: [] };
   }
+  if (res.status === 429) {
+    throw new Error("La API recibió demasiadas peticiones. Espera unos segundos e inténtalo de nuevo.");
+  }
   if (!res.ok) throw new Error(`La API respondió con el estado ${res.status}`);
 
   return toListData((await res.json()) as CharacterResponse);
