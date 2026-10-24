@@ -1,5 +1,5 @@
-import Image from "next/image";
 import Link from "next/link";
+import CharacterAvatar from "@/components/rickandmorty/CharacterAvatar";
 import StatusBadge from "@/components/rickandmorty/StatusBadge";
 import type { CharacterSummary } from "@/types/rickandmorty";
 
@@ -10,13 +10,12 @@ export default function CharacterCard({ character }: { character: CharacterSumma
       className="group block overflow-hidden rounded-2xl border border-white/10 bg-slate-900 transition hover:border-lime-400/60 motion-safe:hover:-translate-y-1 focus-visible:outline-2 focus-visible:outline-lime-400"
     >
       <div className="relative aspect-square bg-slate-800">
-        <Image
+        {/* loading="lazy": la imagen solo se descarga al acercarse al viewport */}
+        <CharacterAvatar
           src={character.image}
           alt={character.name}
-          fill
           sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-          loading="lazy" // carga bajo demanda: solo se descarga al acercarse al viewport
-          className="object-cover"
+          loading="lazy"
         />
       </div>
 
