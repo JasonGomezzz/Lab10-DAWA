@@ -14,18 +14,14 @@ export default function RickAndMortyError({ error, retry }: RickAndMortyErrorPro
   }, [error]);
 
   return (
-    <main className="mx-auto flex max-w-xl flex-col items-center px-4 py-24 text-center">
-      <IoWarning size={64} className="text-yellow-400" />
-      <h1 className="mt-6 text-3xl font-bold">Algo salió mal en el multiverso</h1>
-      <p className="mt-3 text-slate-400">
-        No pudimos cargar los personajes. Puede ser un problema temporal con la API
-        de Rick and Morty.
+    <main className="mx-auto flex max-w-xl flex-col items-center px-5 py-24 text-center">
+      <IoWarning size={64} style={{ color: "var(--rm-yellow)" }} aria-hidden="true" />
+      <h1 className="rm-display mt-6 text-4xl sm:text-5xl">No pudimos cargar los personajes</h1>
+      <p className="mt-4 rm-text-muted">
+        La API de Rick and Morty no respondió. Suele resolverse en unos segundos: vuelve a
+        intentarlo.
       </p>
-      <button
-        type="button"
-        onClick={() => retry()}
-        className="mt-8 inline-flex cursor-pointer items-center gap-2 rounded-lg bg-lime-400 px-6 py-3 font-semibold text-slate-950 transition-colors hover:bg-lime-300"
-      >
+      <button type="button" onClick={() => retry()} className="rm-btn rm-btn-primary mt-9 px-7 py-3.5">
         <IoReload size={18} /> Intentar de nuevo
       </button>
     </main>

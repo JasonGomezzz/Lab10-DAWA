@@ -29,17 +29,20 @@ src/
 │   └── rickandmorty.ts             # tipado de personajes, filtros y paginación
 ├── lib/rickandmorty.ts             # cliente de la API (caché forzado, ISR, lotes y reintentos)
 ├── components/rickandmorty/
-│   ├── CharacterExplorer.tsx       # buscador en tiempo real (Client Component)
-│   ├── CharacterCard.tsx           # tarjeta del listado
-│   ├── CharacterAvatar.tsx         # imagen con lazy loading y reintentos
-│   └── StatusBadge.tsx             # insignia de estado (vivo, muerto, desconocido)
+│   ├── Hero.tsx                    # portada: titular, portal animado y tres personajes
+│   ├── PortalArt.tsx               # portal SVG de aros animados (completo en el hero, solo aros en el detalle y el 404)
+│   ├── CharacterExplorer.tsx       # buscador en tiempo real (Client Component): filtros, paginación, caché y reintentos
+│   ├── CharacterCard.tsx           # tarjeta del listado: retrato en arco, nombre, estado, especie y ubicación
+│   ├── CharacterAvatar.tsx         # imagen con lazy loading, carga diferida por visibilidad (gated) y reintentos
+│   └── StatusBadge.tsx             # insignia de estado (vivo, muerto, desconocido); el color sale de data-status
 └── app/
-    ├── layout.tsx                  # layout raíz
+    ├── layout.tsx                  # layout raíz (fuente Geist)
     ├── not-found.tsx               # 404 de la Pokédex y de rutas inexistentes
     ├── pokemon/                    # Pokédex (layout, lista, error, [name] y loading)
     └── (rickandmorty)/             # grupo de rutas: no cambia la URL
-        ├── layout.tsx              # navegación y metadata
-        ├── page.tsx                # portada: listado de personajes
+        ├── layout.tsx              # navegación, pie, metadata y fuente Bricolage Grotesque
+        ├── rickandmorty.css        # tokens de color, retratos en arco y animaciones del grupo
+        ├── page.tsx                # portada: hero y listado de personajes
         ├── error.tsx               # error boundary con reintento
         ├── not-found.tsx           # personaje inexistente
         └── character/[id]/
@@ -62,19 +65,30 @@ src/
 
 **Por qué SSG + ISR en el detalle.** Cada personaje es una ruta conocida de antemano (ids 1 al total), por lo que `generateStaticParams` los genera todos en el build y cada ficha carga al instante. Los datos de un personaje casi no cambian, pero pueden corregirse, así que `revalidate` de 10 días regenera la ficha en segundo plano sin volver a desplegar. Se usó el id (y no el nombre) porque es único: hay decenas de personajes llamados "Rick" o "Morty".
 
-**Por qué CSR en la búsqueda.** Los filtros dependen de lo que escribe el usuario en cada momento, algo que no se puede conocer en el build. El buscador (`useState` + `useEffect`) consulta la API desde el navegador con un debounce de 350 ms, cancela la petición anterior con `AbortController` y pagina los resultados. Sin filtros reutiliza la lista que llegó renderizada del servidor.
+**Por qué CSR en la búsqueda.** Los filtros dependen de lo que escribe el usuario en cada momento, algo que no se puede conocer en el build. El buscador (`useState` + `useEffect`) consulta la API desde el navegador con un debounce de 500 ms, cancela la petición anterior con `AbortController`, guarda en memoria cada resultado y pagina. Sin filtros reutiliza la lista que llegó renderizada del servidor.
 
 **Límite de peticiones de la API.** La API responde `429` con `Retry-After` de 10 s tras unas 40 peticiones seguidas, y ese límite también aplica a las imágenes. Por eso:
 
 - El detalle se lee en lotes de 100 ids (`/character/1,2,...,100`), 9 peticiones en total en lugar de 826.
 - `generateStaticParams` solo pide el total (los ids son consecutivos, 1 a 826).
-- Las lecturas del servidor reintentan ante un `429` respetando `Retry-After`.
-- Los avatares se sirven sin pasar por el optimizador de Next (`unoptimized`); si uno recibe `429` se reintenta con espera creciente y, agotados los intentos, se muestra un marcador.
-- Si el buscador recibe un `429`, avisa al usuario en lugar de mostrar una lista vacía.
+- Las lecturas del servidor reintentan ante un `429` (respetando `Retry-After`), un `5xx` o un fallo de conexión, con espera creciente.
+- La respuesta `429` de la API no incluye cabeceras CORS, así que en el navegador no llega como estado `429` sino como `TypeError: Failed to fetch`. El buscador trata ese `TypeError` (y un `429` visible, si llegara) como límite de la API: muestra un mensaje que explica qué pasó, reintenta solo a los 10 s (hasta 3 veces) y ofrece **Reintentar ahora**, que reinicia el conteo. Un `TypeError` también puede deberse a una conexión caída y se trata igual. Cualquier otro error (por ejemplo un HTTP 500) muestra su mensaje con el mismo botón, sin reintento automático.
+- Para no llegar al límite desde el navegador: debounce de 500 ms al escribir y caché de resultados en memoria por URL de búsqueda y página (se pierde al recargar).
+- Los avatares de los resultados de búsqueda solo se piden si la tarjeta entra en pantalla (con 120 px de margen) y sigue a la vista durante 300 ms (más hasta 240 ms de escalonado entre tarjetas); si sale antes, la carga se cancela. Así las listas intermedias al escribir y los desplazamientos rápidos no gastan peticiones. La lista inicial del servidor usa `loading="lazy"` sin esa espera.
+- Los avatares se sirven sin pasar por el optimizador de Next (`unoptimized`); si uno falla se reintenta hasta 3 veces con espera creciente (4, 8 y 12 s) y, agotados los intentos, se muestra un marcador.
+
+## Diseño
+
+- **Tipografía:** Bricolage Grotesque para los títulos (cargada con `next/font` en el layout del grupo) y Geist para el texto (cargada en el layout raíz).
+- **Paleta:** fondo índigo; el verde portal se reserva para el portal, el estado "vivo" y las acciones activas (botón principal, filtro seleccionado y foco del campo de texto).
+- **Retratos en arco:** el marco usa el color del estado mediante `data-status` (verde vivo, coral muerto, amarillo desconocido); el mismo color tiñe la insignia y el resplandor al pasar el cursor.
+- **Hero:** portal SVG de aros animados del que salen tres personajes (Rick, Morty y Summer); es la única animación de entrada de la página.
+- **Fotos:** al terminar de cargar, la foto de cada retrato emerge del portal con `clip-path`.
+- **Movimiento reducido:** con `prefers-reduced-motion` se desactivan la entrada del hero, el giro de los aros, la emergencia de las fotos, las transiciones de las tarjetas, el pulso de los esqueletos y el desplazamiento suave al paginar.
 
 ## Cómo probar
 
-1. `npm run dev` y abrir `/`: lista de personajes. Escribir en **Nombre** o **Tipo** y cambiar **Estado** o **Género**: la lista se actualiza sola.
+1. `npm run dev` y abrir `/`: hero con el portal y listado de personajes. Escribir en **Nombre** o **Tipo** y cambiar **Estado** o **Género**: la lista se actualiza sola.
 2. Entrar a un personaje (por ejemplo `/character/1`): muestra todos los campos de la API y sus episodios.
 3. Abrir `/character/9999` o `/character/abc`: muestra la página de personaje no encontrado.
 4. Abrir `/pokemon` y `/pokemon/pikachu` para la Pokédex, o `/ruta-inexistente` para el 404 general.
@@ -98,7 +112,8 @@ El proyecto se generó con `create-next-app` 16.4.3, que activa `cacheComponents
 - En el layout de la Pokédex se usa `bg-black/30` en lugar de `bg-opacity-30`, que ya no existe en Tailwind CSS 4.
 - Se quitaron los imports sin uso de `pokemon/page.tsx` y el bloque de código comentado del layout.
 - La portada por defecto de `create-next-app` se reemplazó por el listado de Rick and Morty, y el título e idioma del layout raíz pasaron a "Lab 10" y `es`.
-- La prop `priority` de `next/image` está en desuso en Next 16; en la tarea se usa `loading="eager"` solo en la imagen principal del detalle.
+- La prop `priority` de `next/image` está en desuso en Next 16; en la tarea se usa `loading="eager"` solo en la imagen principal del detalle y en los tres personajes del hero.
+- El CSS del grupo define `html:has(.rm-root)` con fondo oscuro y `color-scheme: dark` para que el rebote de scroll de macOS no muestre blanco.
 
 ## Repositorio
 

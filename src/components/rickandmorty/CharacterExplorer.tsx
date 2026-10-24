@@ -1,10 +1,13 @@
 "use client";
 
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IoChevronBack,
   IoChevronForward,
   IoClose,
+  IoFlaskOutline,
+  IoRefresh,
+  IoSearch,
   IoWarning,
 } from "react-icons/io5";
 import CharacterCard from "@/components/rickandmorty/CharacterCard";
@@ -18,18 +21,27 @@ import type {
   CharacterFilters,
   CharacterListData,
   CharacterResponse,
+  CharacterStatus,
 } from "@/types/rickandmorty";
 
-const DEBOUNCE_MS = 350;
+const DEBOUNCE_MS = 500;
+const RETRY_AFTER_MS = 10_000; // la API bloquea 10 s tras superar su límite
+const MAX_AUTO_RETRIES = 3;
 
-const STATUS_OPTIONS: { value: CharacterFilters["status"]; label: string }[] = [
+interface Option<T> {
+  value: T;
+  label: string;
+  status?: CharacterStatus;
+}
+
+const STATUS_OPTIONS: Option<CharacterFilters["status"]>[] = [
   { value: "", label: "Todos" },
-  { value: "alive", label: "Vivo" },
-  { value: "dead", label: "Muerto" },
-  { value: "unknown", label: "Desconocido" },
+  { value: "alive", label: "Vivo", status: "Alive" },
+  { value: "dead", label: "Muerto", status: "Dead" },
+  { value: "unknown", label: "Desconocido", status: "unknown" },
 ];
 
-const GENDER_OPTIONS: { value: CharacterFilters["gender"]; label: string }[] = [
+const GENDER_OPTIONS: Option<CharacterFilters["gender"]>[] = [
   { value: "", label: "Todos" },
   { value: "female", label: "Femenino" },
   { value: "male", label: "Masculino" },
@@ -37,17 +49,14 @@ const GENDER_OPTIONS: { value: CharacterFilters["gender"]; label: string }[] = [
   { value: "unknown", label: "Desconocido" },
 ];
 
-const CONTROL_CLASS =
-  "w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-lime-400 focus:outline-none focus:ring-2 focus:ring-lime-400/40";
+// La API excede su límite de peticiones (429)
+class ApiBusyError extends Error {}
 
-const PAGE_BUTTON_CLASS =
-  "inline-flex cursor-pointer items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40";
-
-// Última respuesta (o error) que llegó para una URL concreta
-interface SettledRequest {
+interface Failure {
   url: string;
-  data: CharacterListData | null;
-  error: string | null;
+  busy: boolean;
+  willRetry: boolean;
+  message: string;
 }
 
 async function searchCharacters(
@@ -60,33 +69,46 @@ async function searchCharacters(
   if (res.status === 404) {
     return { info: { count: 0, pages: 0, next: null, prev: null }, results: [] };
   }
-  if (res.status === 429) {
-    throw new Error("La API recibió demasiadas peticiones. Espera unos segundos e inténtalo de nuevo.");
-  }
+  if (res.status === 429) throw new ApiBusyError();
   if (!res.ok) throw new Error(`La API respondió con el estado ${res.status}`);
 
   return toListData((await res.json()) as CharacterResponse);
 }
 
-function Field({
-  label,
-  htmlFor,
-  children,
+function ChipGroup<T extends string>({
+  name,
+  legend,
+  options,
+  value,
+  onChange,
 }: {
-  label: string;
-  htmlFor: string;
-  children: ReactNode;
+  name: string;
+  legend: string;
+  options: Option<T>[];
+  value: T;
+  onChange: (value: T) => void;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label
-        htmlFor={htmlFor}
-        className="text-xs font-medium uppercase tracking-wide text-slate-400"
-      >
-        {label}
-      </label>
-      {children}
-    </div>
+    <fieldset className="min-w-0">
+      <legend className="mb-2 text-sm font-medium rm-text-muted">{legend}</legend>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <label key={option.value} className="rm-chip">
+            <input
+              type="radio"
+              name={name}
+              value={option.value}
+              checked={value === option.value}
+              onChange={() => onChange(option.value)}
+              className="sr-only"
+            />
+            <span className="rm-chip-face" data-status={option.status}>
+              {option.label}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
@@ -94,48 +116,81 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
   const [filters, setFilters] = useState<CharacterFilters>(EMPTY_FILTERS);
   const [debounced, setDebounced] = useState<CharacterFilters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
-  const [settled, setSettled] = useState<SettledRequest | null>(null);
+  const [cache, setCache] = useState<Record<string, CharacterListData>>({});
+  const [stale, setStale] = useState<CharacterListData | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const retries = useRef<Record<string, number>>({});
   const resultsRef = useRef<HTMLElement>(null);
 
   // Espera a que el usuario deje de escribir antes de consultar la API
   useEffect(() => {
+    // Sin cambios pendientes no hay temporizador: al volver con Atrás Next re-ejecuta los efectos
+    // y no debe reiniciar la paginación
+    if (filters === debounced) return;
+
     const timer = setTimeout(() => {
       setDebounced(filters);
       setPage(1);
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [filters]);
+  }, [filters, debounced]);
 
   // Sin filtros y en la página 1 se reutiliza la lista que ya llegó renderizada del servidor
   const isInitial = page === 1 && !hasActiveFilters(debounced);
   const requestUrl = buildCharactersUrl(debounced, page);
+  const fresh = isInitial ? initial : cache[requestUrl];
+
+  // Lo último que se mostró sirve de respaldo atenuado mientras llega la siguiente búsqueda
+  if (fresh && fresh !== stale) setStale(fresh);
 
   // Búsqueda en el cliente (CSR): cada cambio de filtros o de página consulta la API
   useEffect(() => {
-    if (isInitial) return;
+    if (isInitial || fresh) return;
 
     const controller = new AbortController();
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     searchCharacters(requestUrl, controller.signal)
-      .then((data) => setSettled({ url: requestUrl, data, error: null }))
+      .then((data) => {
+        setCache((current) => ({ ...current, [requestUrl]: data }));
+        setStale(data);
+        setFailure(null);
+      })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setSettled({
+
+        // Cuando la API responde 429 no envía cabeceras CORS, así que el navegador lo
+        // reporta como TypeError ("Failed to fetch"): se trata igual que un 429
+        const busy = error instanceof ApiBusyError || error instanceof TypeError;
+        const used = retries.current[requestUrl] ?? 0;
+
+        const willRetry = busy && used < MAX_AUTO_RETRIES;
+
+        setFailure({
           url: requestUrl,
-          data: null,
-          error: error instanceof Error ? error.message : "Error desconocido",
+          busy,
+          willRetry,
+          message: error instanceof Error ? error.message : "Error desconocido",
         });
+
+        if (willRetry) {
+          retries.current[requestUrl] = used + 1;
+          retryTimer = setTimeout(() => setRetryNonce((current) => current + 1), RETRY_AFTER_MS);
+        }
       });
 
-    return () => controller.abort();
-  }, [isInitial, requestUrl]);
+    return () => {
+      controller.abort();
+      clearTimeout(retryTimer);
+    };
+  }, [isInitial, fresh, requestUrl, retryNonce]);
 
   const isTyping = filters !== debounced;
-  const isCurrent = settled?.url === requestUrl;
-  const isLoading = isTyping || (!isInitial && !isCurrent);
-  const data = isInitial ? initial : (settled?.data ?? null);
-  const error = !isInitial && settled && isCurrent ? settled.error : null;
+  const error = !isInitial && !fresh && failure?.url === requestUrl ? failure : null;
+  const isLoading = isTyping || (!fresh && !error);
+  const data = fresh ?? stale;
   const showSkeleton = !data || (isLoading && data.results.length === 0);
 
   function updateFilter<K extends keyof CharacterFilters>(
@@ -151,9 +206,16 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
     setPage(1);
   }
 
+  function retryNow() {
+    retries.current[requestUrl] = 0;
+    setFailure(null);
+    setRetryNonce((current) => current + 1);
+  }
+
   function goToPage(nextPage: number) {
     setPage(nextPage);
-    resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    resultsRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
   }
 
   return (
@@ -161,85 +223,88 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
       <form
         role="search"
         onSubmit={(event) => event.preventDefault()}
-        className="grid gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2 lg:grid-cols-4"
+        className="rm-panel grid gap-5 p-4 sm:p-6"
       >
-        <Field label="Nombre" htmlFor="filter-name">
-          <input
-            id="filter-name"
-            type="search"
-            value={filters.name}
-            onChange={(event) => updateFilter("name", event.target.value)}
-            placeholder="Ej. Rick"
-            autoComplete="off"
-            className={CONTROL_CLASS}
-          />
-        </Field>
+        <div className="grid gap-4 md:grid-cols-[1fr_17rem]">
+          <div>
+            <label htmlFor="filter-name" className="mb-2 block text-sm font-medium rm-text-muted">
+              Nombre
+            </label>
+            <div className="relative">
+              <IoSearch
+                size={20}
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 rm-text-faint"
+              />
+              <input
+                id="filter-name"
+                type="search"
+                value={filters.name}
+                onChange={(event) => updateFilter("name", event.target.value)}
+                placeholder="Rick, Morty, Pickle…"
+                autoComplete="off"
+                className="rm-input"
+              />
+            </div>
+          </div>
 
-        <Field label="Estado" htmlFor="filter-status">
-          <select
-            id="filter-status"
+          <div>
+            <label htmlFor="filter-type" className="mb-2 block text-sm font-medium rm-text-muted">
+              Tipo
+            </label>
+            <div className="relative">
+              <IoFlaskOutline
+                size={20}
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 rm-text-faint"
+              />
+              <input
+                id="filter-type"
+                type="search"
+                value={filters.type}
+                onChange={(event) => updateFilter("type", event.target.value)}
+                placeholder="Parasite, Clone…"
+                autoComplete="off"
+                className="rm-input"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-2">
+          <ChipGroup
+            name="status"
+            legend="Estado"
+            options={STATUS_OPTIONS}
             value={filters.status}
-            onChange={(event) =>
-              updateFilter("status", event.target.value as CharacterFilters["status"])
-            }
-            className={CONTROL_CLASS}
-          >
-            {STATUS_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Tipo" htmlFor="filter-type">
-          <input
-            id="filter-type"
-            type="search"
-            value={filters.type}
-            onChange={(event) => updateFilter("type", event.target.value)}
-            placeholder="Ej. Parasite"
-            autoComplete="off"
-            className={CONTROL_CLASS}
+            onChange={(value) => updateFilter("status", value)}
           />
-        </Field>
-
-        <Field label="Género" htmlFor="filter-gender">
-          <select
-            id="filter-gender"
+          <ChipGroup
+            name="gender"
+            legend="Género"
+            options={GENDER_OPTIONS}
             value={filters.gender}
-            onChange={(event) =>
-              updateFilter("gender", event.target.value as CharacterFilters["gender"])
-            }
-            className={CONTROL_CLASS}
-          >
-            {GENDER_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
+            onChange={(value) => updateFilter("gender", value)}
+          />
+        </div>
       </form>
 
-      <section ref={resultsRef} className="mt-8 scroll-mt-20" aria-busy={isLoading}>
-        <div className="mb-4 flex min-h-8 flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-400" aria-live="polite">
-            {data
-              ? `${data.info.count} personajes${
-                  data.info.pages > 0 ? ` · Página ${page} de ${data.info.pages}` : ""
-                }`
-              : "Buscando personajes…"}
-            {isLoading && data ? " · actualizando…" : ""}
-          </p>
+      <section ref={resultsRef} className="scroll-mt-24 pt-10" aria-busy={isLoading}>
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+          <div aria-live="polite">
+            <p className="rm-display text-3xl sm:text-4xl">
+              {data ? `${data.info.count} personajes` : error ? "Búsqueda en pausa" : "Buscando…"}
+            </p>
+            <p className="mt-1 min-h-5 text-sm rm-text-muted">
+              {data && data.info.pages > 0
+                ? `Página ${page} de ${data.info.pages}${isLoading ? ", actualizando…" : ""}`
+                : isLoading && data
+                  ? "Actualizando…"
+                  : ""}
+            </p>
+          </div>
 
           {hasActiveFilters(filters) && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-3 py-1.5 text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <IoClose size={16} /> Limpiar filtros
+            <button type="button" onClick={clearFilters} className="rm-btn">
+              <IoClose size={18} /> Limpiar filtros
             </button>
           )}
         </div>
@@ -247,38 +312,63 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
         {error ? (
           <div
             role="alert"
-            className="flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-6 text-red-200"
+            className="rm-panel flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between"
+            style={{ borderColor: "rgb(255 106 125 / 0.45)" }}
           >
-            <IoWarning size={24} className="mt-0.5 shrink-0" />
-            <div>
-              <p className="font-semibold">No se pudo completar la búsqueda</p>
-              <p className="mt-1 text-sm text-red-200/80">{error}</p>
+            <div className="flex items-start gap-3">
+              <IoWarning size={26} className="mt-0.5 shrink-0" style={{ color: "var(--rm-yellow)" }} />
+              <div>
+                <p className="font-semibold">
+                  {error.busy
+                    ? "La API de Rick and Morty está limitando las peticiones"
+                    : "No se pudo completar la búsqueda"}
+                </p>
+                <p className="mt-1 text-sm rm-text-muted">
+                  {error.busy
+                    ? error.willRetry
+                      ? "Pasa cuando se piden muchas fichas seguidas. Se reintentará sola en unos segundos."
+                      : "Pasa cuando se piden muchas fichas seguidas. Espera unos segundos y pulsa Reintentar ahora."
+                    : error.message}
+                </p>
+              </div>
             </div>
+            <button type="button" onClick={retryNow} className="rm-btn shrink-0">
+              <IoRefresh size={18} /> Reintentar ahora
+            </button>
           </div>
         ) : showSkeleton ? (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {Array.from({ length: 10 }, (_, index) => (
-              <div
-                key={index}
-                className="aspect-3/4 animate-pulse rounded-2xl border border-white/10 bg-slate-900"
-              />
+              <div key={index} className="motion-safe:animate-pulse">
+                <div className="rm-arch aspect-[1/1.12] bg-white/5" />
+                <div className="mt-3 h-5 w-3/4 rounded bg-white/5" />
+                <div className="mt-2 h-4 w-1/2 rounded bg-white/5" />
+              </div>
             ))}
           </div>
         ) : data.results.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/15 p-10 text-center">
-            <p className="text-lg font-semibold">Ningún personaje coincide con tu búsqueda</p>
-            <p className="mt-1 text-sm text-slate-400">
-              Prueba con otro nombre o quita alguno de los filtros.
+          <div className="rm-panel p-10 text-center">
+            <p className="rm-display text-2xl">Ningún personaje coincide</p>
+            <p className="mx-auto mt-2 max-w-md rm-text-muted">
+              Prueba con otro nombre o quita alguno de los filtros para ver más resultados.
             </p>
+            <button type="button" onClick={clearFilters} className="rm-btn rm-btn-primary mt-6">
+              Limpiar filtros
+            </button>
           </div>
         ) : (
           <div
-            className={`grid grid-cols-2 gap-4 transition-opacity sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${
+            className={`grid grid-cols-2 gap-x-5 gap-y-8 transition-opacity sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${
               isLoading ? "opacity-50" : ""
             }`}
           >
-            {data.results.map((character) => (
-              <CharacterCard key={character.id} character={character} />
+            {data.results.map((character, index) => (
+              <CharacterCard
+                key={character.id}
+                character={character}
+                gated={!isInitial}
+                delay={300 + (index % 5) * 60}
+              />
             ))}
           </div>
         )}
@@ -286,26 +376,30 @@ export default function CharacterExplorer({ initial }: { initial: CharacterListD
         {data && data.info.pages > 1 && !error && (
           <nav
             aria-label="Paginación"
-            className="mt-8 flex items-center justify-center gap-4"
+            className="mt-12 grid grid-cols-2 items-center gap-3 sm:flex sm:justify-center sm:gap-4"
           >
-            <button
-              type="button"
-              onClick={() => goToPage(page - 1)}
-              disabled={page <= 1 || isLoading}
-              className={PAGE_BUTTON_CLASS}
-            >
-              <IoChevronBack size={16} /> Anterior
-            </button>
-            <span className="text-sm text-slate-400">
+            <span className="col-span-2 text-center text-sm rm-text-muted sm:order-2 sm:col-auto sm:min-w-28">
               Página {page} de {data.info.pages}
             </span>
             <button
               type="button"
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= data.info.pages || isLoading}
-              className={PAGE_BUTTON_CLASS}
+              onClick={() => {
+                if (page > 1 && !isLoading) goToPage(page - 1);
+              }}
+              aria-disabled={page <= 1 || isLoading}
+              className="rm-btn sm:order-1"
             >
-              Siguiente <IoChevronForward size={16} />
+              <IoChevronBack size={18} /> Anterior
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (page < data.info.pages && !isLoading) goToPage(page + 1);
+              }}
+              aria-disabled={page >= data.info.pages || isLoading}
+              className="rm-btn sm:order-3"
+            >
+              Siguiente <IoChevronForward size={18} />
             </button>
           </nav>
         )}

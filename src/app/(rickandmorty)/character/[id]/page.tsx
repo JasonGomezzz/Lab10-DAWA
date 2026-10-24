@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { IoArrowBack } from "react-icons/io5";
 import CharacterAvatar from "@/components/rickandmorty/CharacterAvatar";
+import PortalArt from "@/components/rickandmorty/PortalArt";
 import StatusBadge from "@/components/rickandmorty/StatusBadge";
 import {
   GENDER_LABELS,
@@ -46,12 +47,12 @@ export async function generateMetadata({ params }: CharacterPageProps): Promise<
   };
 }
 
-function LocationValue({ place }: { place: CharacterLocationRef }) {
+function Place({ place }: { place: CharacterLocationRef }) {
   return (
     <>
       {place.name}
       {place.url && (
-        <span className="mt-1 block break-all text-xs text-slate-500">{place.url}</span>
+        <span className="mt-1 block break-all text-xs rm-text-faint">{place.url}</span>
       )}
     </>
   );
@@ -66,81 +67,88 @@ export default async function CharacterDetail({ params }: CharacterPageProps) {
   // Cada campo de la respuesta de la API tiene su lugar en la ficha
   const fields: { label: string; value: ReactNode }[] = [
     { label: "ID", value: `#${character.id}` },
-    { label: "Estado", value: <StatusBadge status={character.status} /> },
     { label: "Especie", value: character.species },
     { label: "Tipo", value: character.type || "Sin tipo" },
     { label: "Género", value: GENDER_LABELS[character.gender] ?? character.gender },
-    { label: "Origen", value: <LocationValue place={character.origin} /> },
-    { label: "Última ubicación", value: <LocationValue place={character.location} /> },
+    { label: "Origen", value: <Place place={character.origin} /> },
+    { label: "Última ubicación", value: <Place place={character.location} /> },
     { label: "Creado", value: `${dateFormatter.format(new Date(character.created))} UTC` },
     {
       label: "Imagen",
-      value: <span className="break-all text-sm text-slate-300">{character.image}</span>,
+      value: <span className="break-all text-sm rm-text-muted">{character.image}</span>,
     },
     {
       label: "URL de la API",
-      value: <span className="break-all text-sm text-slate-300">{character.url}</span>,
+      value: <span className="break-all text-sm rm-text-muted">{character.url}</span>,
     },
   ];
 
   const episodes = character.episode.map((url) => url.split("/").at(-1));
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <Link
-        href="/"
-        className="inline-flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-lime-400"
-      >
-        <IoArrowBack size={16} /> Volver a los personajes
+    <main className="mx-auto max-w-6xl px-5 pb-24 pt-8 sm:px-8">
+      <Link href="/" className="rm-btn">
+        <IoArrowBack size={18} /> Volver a los personajes
       </Link>
 
-      <article className="mt-6 grid gap-8 md:grid-cols-[20rem_1fr]">
-        <div className="relative aspect-square overflow-hidden rounded-2xl border border-white/10 bg-slate-800">
-          <CharacterAvatar
-            src={character.image}
-            alt={character.name}
-            sizes="(min-width: 768px) 320px, 100vw"
-            loading="eager" // es la imagen principal de la página: no se difiere
+      <article className="mt-10 grid items-center gap-14 lg:grid-cols-[minmax(0,25rem)_1fr]">
+        <div data-status={character.status} className="relative mx-auto w-full max-w-sm">
+          <PortalArt
+            variant="rim"
+            uid={character.id}
+            className="absolute left-1/2 top-1/2 h-[130%] w-[130%] -translate-x-1/2 -translate-y-1/2"
           />
+          <div className="rm-frame rm-arch relative shadow-2xl shadow-black/60">
+            <div className="rm-frame-inner rm-arch">
+              <CharacterAvatar
+                src={character.image}
+                alt={character.name}
+                sizes="(min-width: 1024px) 400px, 80vw"
+                loading="eager" // es la imagen principal de la página: no se difiere
+              />
+            </div>
+          </div>
         </div>
 
-        <div>
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">{character.name}</h1>
+        <div className="min-w-0">
+          <StatusBadge status={character.status} />
+          <h1 className="rm-display mt-3 text-[clamp(2.75rem,6.5vw,5.5rem)] leading-[0.95]">
+            {character.name}
+          </h1>
 
-          <dl className="mt-6 grid gap-3 sm:grid-cols-2">
+          <dl className="mt-10 grid gap-x-10 sm:grid-cols-2">
             {fields.map((field) => (
               <div
                 key={field.label}
-                className="rounded-xl border border-white/10 bg-white/5 p-4"
+                className="min-w-0 border-t py-4"
+                style={{ borderColor: "var(--rm-line)" }}
               >
-                <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                  {field.label}
-                </dt>
-                <dd className="mt-1.5 break-words">{field.value}</dd>
+                <dt className="text-sm rm-text-faint">{field.label}</dt>
+                <dd className="mt-1 break-words text-lg">{field.value}</dd>
               </div>
             ))}
           </dl>
         </div>
       </article>
 
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold">
-          Episodios{" "}
-          <span className="text-base font-normal text-slate-400">({episodes.length})</span>
+      <section className="mt-20">
+        <h2 className="rm-display text-3xl sm:text-4xl">
+          Episodios <span className="rm-text-faint">({episodes.length})</span>
         </h2>
         {episodes.length > 0 ? (
-          <ul className="mt-4 flex flex-wrap gap-2">
+          <ul className="mt-6 flex flex-wrap gap-2">
             {episodes.map((episode) => (
               <li
                 key={episode}
-                className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-sm text-slate-300"
+                className="rounded-full border px-3.5 py-1.5 text-sm tabular-nums rm-text-muted"
+                style={{ borderColor: "var(--rm-line)", background: "rgb(255 255 255 / 0.03)" }}
               >
                 Ep. {episode}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="mt-3 text-slate-400">Este personaje no aparece en ningún episodio.</p>
+          <p className="mt-4 rm-text-muted">Este personaje no aparece en ningún episodio.</p>
         )}
       </section>
     </main>
