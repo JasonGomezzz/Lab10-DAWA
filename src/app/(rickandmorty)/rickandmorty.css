@@ -1,5 +1,6 @@
 /* Sistema visual del multiverso de Rick and Morty: tokens, tipografía y animaciones */
 
+@layer components {
 html:has(.rm-root) {
   background: #0b0a1f;
   color-scheme: dark;
@@ -94,7 +95,7 @@ html:has(.rm-root) {
 }
 .rm-input::placeholder { color: var(--rm-faint); }
 .rm-input:focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
   border-color: var(--rm-portal);
   box-shadow: 0 0 0 3px rgb(140 240 74 / 0.22);
 }
@@ -149,8 +150,9 @@ html:has(.rm-root) {
   cursor: pointer;
   transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.12s ease-out;
 }
-.rm-btn:active:not(:disabled) { transform: scale(0.97); }
-.rm-btn:disabled { cursor: not-allowed; opacity: 0.4; }
+.rm-btn:active:not(:disabled):not([aria-disabled="true"]) { transform: scale(0.97); }
+.rm-btn:disabled,
+.rm-btn[aria-disabled="true"] { cursor: not-allowed; opacity: 0.4; }
 .rm-btn:focus-visible { outline: 2px solid var(--rm-blue); outline-offset: 2px; }
 .rm-btn-primary {
   border-color: transparent;
@@ -158,8 +160,8 @@ html:has(.rm-root) {
   color: #0b1a05;
 }
 @media (hover: hover) and (pointer: fine) {
-  .rm-btn:hover:not(:disabled) { background-color: rgb(238 240 255 / 0.08); border-color: rgb(166 169 212 / 0.45); }
-  .rm-btn-primary:hover:not(:disabled) { background-color: #a6ff66; border-color: transparent; }
+  .rm-btn:hover:not(:disabled):not([aria-disabled="true"]) { background-color: rgb(238 240 255 / 0.08); border-color: rgb(166 169 212 / 0.45); }
+  .rm-btn-primary:hover:not(:disabled):not([aria-disabled="true"]) { background-color: #a6ff66; border-color: transparent; }
 }
 
 /* Retrato en forma de arco con marco del color del estado */
@@ -231,4 +233,6 @@ html:has(.rm-root) {
   .rm-hero-avatar { animation: none; }
   .rm-spin-a, .rm-spin-b, .rm-spin-c { animation: none; }
   .rm-photo, .rm-frame { transition: none; }
+  .rm-btn:active:not(:disabled):not([aria-disabled="true"]) { transform: none; }
+}
 }
