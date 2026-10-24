@@ -44,11 +44,14 @@ const RIM_C = blobPath(194, 8, 47, 11);
 interface PortalArtProps {
   // "full" dibuja el portal completo; "rim" solo los aros (para enmarcar un retrato)
   variant?: "full" | "rim";
+  // Identifica la instancia: Next mantiene varias rutas a la vez en el DOM y los ids de los
+  // degradados (url(#...)) no pueden repetirse entre ellas
+  uid?: string | number;
   className?: string;
 }
 
-export default function PortalArt({ variant = "full", className }: PortalArtProps) {
-  const id = variant === "full" ? "rm-portal-full" : "rm-portal-rim";
+export default function PortalArt({ variant = "full", uid = "hero", className }: PortalArtProps) {
+  const id = `rm-portal-${variant}-${uid}`;
 
   return (
     <svg

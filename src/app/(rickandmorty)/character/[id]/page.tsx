@@ -95,6 +95,7 @@ export default async function CharacterDetail({ params }: CharacterPageProps) {
         <div data-status={character.status} className="relative mx-auto w-full max-w-sm">
           <PortalArt
             variant="rim"
+            uid={character.id}
             className="absolute left-1/2 top-1/2 h-[130%] w-[130%] -translate-x-1/2 -translate-y-1/2"
           />
           <div className="rm-frame rm-arch relative shadow-2xl shadow-black/60">

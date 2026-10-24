@@ -6,7 +6,7 @@ export default function CharacterNotFound() {
   return (
     <main className="mx-auto flex max-w-xl flex-col items-center px-5 py-24 text-center">
       <div className="relative size-44">
-        <PortalArt variant="rim" className="absolute inset-0 h-full w-full" />
+        <PortalArt variant="rim" uid="no-encontrado" className="absolute inset-0 h-full w-full" />
         <GiAlienStare
           size={72}
           className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rm-text-portal"
