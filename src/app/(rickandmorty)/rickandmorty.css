@@ -1,0 +1,234 @@
+/* Sistema visual del multiverso de Rick and Morty: tokens, tipografía y animaciones */
+
+html:has(.rm-root) {
+  background: #0b0a1f;
+  color-scheme: dark;
+}
+
+.rm-root {
+  --rm-void: #0b0a1f;
+  --rm-dusk: #17153a;
+  --rm-dusk-2: #221f52;
+  --rm-line: rgb(166 169 212 / 0.18);
+  --rm-text: #eef0ff;
+  --rm-muted: #a6a9d4;
+  --rm-faint: #8488b8;
+  --rm-portal: #8cf04a;
+  --rm-portal-core: #e4ffb0;
+  --rm-portal-deep: #1b8f4e;
+  --rm-blue: #9fd8f5;
+  --rm-yellow: #ffd23f;
+  --rm-red: #ff6a7d;
+  --rm-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  color: var(--rm-text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background:
+    radial-gradient(60rem 38rem at 88% -6%, rgb(140 240 74 / 0.13), transparent 62%),
+    radial-gradient(52rem 42rem at -12% 38%, rgb(112 84 255 / 0.2), transparent 62%),
+    var(--rm-void);
+}
+
+/* Estrellas: una sola capa fija y estática, sin JavaScript */
+.rm-root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.3;
+  background-size: 640px 640px;
+  background-image:
+    radial-gradient(circle at 48px 72px, #fff 0, #fff 1.3px, transparent 2.2px),
+    radial-gradient(circle at 190px 28px, rgb(255 255 255 / 0.8) 0, rgb(255 255 255 / 0.8) 1.0px, transparent 1.9px),
+    radial-gradient(circle at 330px 150px, rgb(159 216 245) 0, rgb(159 216 245) 1.7px, transparent 2.6px),
+    radial-gradient(circle at 520px 90px, rgb(255 255 255 / 0.75) 0, rgb(255 255 255 / 0.75) 1.1px, transparent 2.0px),
+    radial-gradient(circle at 90px 300px, #fff 0, #fff 1.4px, transparent 2.3px),
+    radial-gradient(circle at 270px 380px, rgb(255 255 255 / 0.7) 0, rgb(255 255 255 / 0.7) 1.0px, transparent 1.9px),
+    radial-gradient(circle at 450px 330px, rgb(255 255 255 / 0.9) 0, rgb(255 255 255 / 0.9) 1.5px, transparent 2.4px),
+    radial-gradient(circle at 600px 470px, rgb(255 255 255 / 0.85) 0, rgb(255 255 255 / 0.85) 1.1px, transparent 2.0px),
+    radial-gradient(circle at 150px 560px, rgb(255 255 255 / 0.8) 0, rgb(255 255 255 / 0.8) 1.3px, transparent 2.2px),
+    radial-gradient(circle at 400px 600px, rgb(159 216 245) 0, rgb(159 216 245) 1.2px, transparent 2.1px),
+    radial-gradient(circle at 560px 250px, rgb(255 255 255 / 0.7) 0, rgb(255 255 255 / 0.7) 1.0px, transparent 1.9px),
+    radial-gradient(circle at 30px 450px, rgb(255 255 255 / 0.8) 0, rgb(255 255 255 / 0.8) 1.1px, transparent 2.0px);
+}
+
+.rm-display {
+  font-family: var(--font-bricolage), var(--font-geist-sans), system-ui, sans-serif;
+  font-weight: 800;
+  font-stretch: 84%;
+  font-optical-sizing: auto;
+  letter-spacing: -0.018em;
+}
+
+.rm-text-muted { color: var(--rm-muted); }
+.rm-text-faint { color: var(--rm-faint); }
+.rm-text-portal { color: var(--rm-portal); }
+
+/* Estado del personaje: define el color del marco, del punto y del texto */
+.rm-root { --rm-ring: var(--rm-faint); }
+[data-status="Alive"] { --rm-ring: var(--rm-portal); }
+[data-status="Dead"] { --rm-ring: var(--rm-red); }
+[data-status="unknown"] { --rm-ring: var(--rm-yellow); }
+
+/* Controles */
+.rm-panel {
+  border: 1px solid var(--rm-line);
+  border-radius: 1.5rem;
+  background: linear-gradient(180deg, rgb(34 31 82 / 0.55), rgb(23 21 58 / 0.55));
+  backdrop-filter: blur(14px);
+}
+
+.rm-input {
+  width: 100%;
+  border: 1px solid var(--rm-line);
+  border-radius: 0.875rem;
+  background: rgb(11 10 31 / 0.7);
+  padding: 0.8rem 1rem 0.8rem 2.75rem;
+  color: var(--rm-text);
+  font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.rm-input::placeholder { color: var(--rm-faint); }
+.rm-input:focus-visible {
+  outline: none;
+  border-color: var(--rm-portal);
+  box-shadow: 0 0 0 3px rgb(140 240 74 / 0.22);
+}
+
+.rm-chip { display: inline-flex; cursor: pointer; }
+.rm-chip-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--rm-line);
+  border-radius: 999px;
+  padding: 0.45rem 0.95rem;
+  color: var(--rm-muted);
+  font-size: 0.9rem;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+.rm-chip-face[data-status]::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--rm-ring);
+}
+.rm-chip input:checked + .rm-chip-face[data-status]::before { background: currentColor; }
+.rm-chip input:checked + .rm-chip-face {
+  border-color: transparent;
+  background: var(--rm-portal);
+  color: #0b1a05;
+  font-weight: 600;
+}
+.rm-chip input:focus-visible + .rm-chip-face {
+  outline: 2px solid var(--rm-blue);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .rm-chip input:not(:checked) + .rm-chip-face:hover {
+    border-color: rgb(166 169 212 / 0.45);
+    color: var(--rm-text);
+  }
+}
+
+.rm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--rm-line);
+  border-radius: 999px;
+  padding: 0.7rem 1.4rem;
+  color: var(--rm-text);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.12s ease-out;
+}
+.rm-btn:active:not(:disabled) { transform: scale(0.97); }
+.rm-btn:disabled { cursor: not-allowed; opacity: 0.4; }
+.rm-btn:focus-visible { outline: 2px solid var(--rm-blue); outline-offset: 2px; }
+.rm-btn-primary {
+  border-color: transparent;
+  background: var(--rm-portal);
+  color: #0b1a05;
+}
+@media (hover: hover) and (pointer: fine) {
+  .rm-btn:hover:not(:disabled) { background-color: rgb(238 240 255 / 0.08); border-color: rgb(166 169 212 / 0.45); }
+  .rm-btn-primary:hover:not(:disabled) { background-color: #a6ff66; border-color: transparent; }
+}
+
+/* Retrato en forma de arco con marco del color del estado */
+.rm-arch { border-radius: 999px 999px 1rem 1rem; }
+.rm-frame {
+  padding: 3px;
+  background: linear-gradient(
+    165deg,
+    var(--rm-ring),
+    color-mix(in oklab, var(--rm-ring) 12%, transparent) 55%,
+    var(--rm-ring)
+  );
+  transition: box-shadow 0.3s var(--rm-ease-out);
+}
+.rm-frame-inner {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1 / 1.12;
+  background: var(--rm-dusk-2);
+}
+.rm-photo { transition: transform 0.5s var(--rm-ease-out); }
+
+@media (hover: hover) and (pointer: fine) {
+  .rm-card:hover .rm-frame {
+    box-shadow:
+      0 22px 44px -20px var(--rm-ring),
+      0 0 0 1px color-mix(in oklab, var(--rm-ring) 55%, transparent);
+  }
+  .rm-card:hover .rm-photo { transform: scale(1.06); }
+}
+.rm-card:focus-visible { outline: 2px solid var(--rm-blue); outline-offset: 6px; border-radius: 1.25rem; }
+
+/* La foto emerge del portal cuando termina de cargar (evita que aparezca de golpe) */
+.rm-photo[data-state="loading"] { opacity: 0; }
+.rm-photo[data-state="ready"] { animation: rm-emerge 0.55s var(--rm-ease-out) backwards; }
+
+@keyframes rm-emerge {
+  from { clip-path: circle(0% at 50% 55%); transform: scale(1.2); }
+  to { clip-path: circle(80% at 50% 55%); transform: scale(1); }
+}
+
+/* Portal del hero */
+.rm-portal-svg { animation: rm-portal-open 0.9s var(--rm-ease-out) both; }
+.rm-spin-a, .rm-spin-b, .rm-spin-c { transform-origin: 200px 200px; }
+.rm-spin-a { animation: rm-spin 38s linear infinite; }
+.rm-spin-b { animation: rm-spin 26s linear infinite reverse; }
+.rm-spin-c { animation: rm-spin 17s linear infinite; }
+
+@keyframes rm-spin { to { transform: rotate(360deg); } }
+@keyframes rm-portal-open {
+  from { opacity: 0; transform: scale(0.55) rotate(-25deg); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Los personajes del hero salen del portal, uno tras otro */
+.rm-hero-avatar {
+  position: absolute;
+  animation: rm-hero-out 0.85s var(--rm-ease-out) backwards;
+  animation-delay: calc(650ms + var(--i) * 150ms);
+}
+@keyframes rm-hero-out {
+  from { opacity: 0; transform: translate(var(--fx), var(--fy)) scale(0.2); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rm-photo[data-state="ready"],
+  .rm-portal-svg,
+  .rm-hero-avatar { animation: none; }
+  .rm-spin-a, .rm-spin-b, .rm-spin-c { animation: none; }
+  .rm-photo, .rm-frame { transition: none; }
+}
